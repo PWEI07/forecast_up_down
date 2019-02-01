@@ -140,4 +140,3 @@ print(pca.components_)
 print(pca.explained_variance_)
 
 phy = np.array([[0.1, 0.2, 0.7], [0, 0, 1], [0.5, 0.5, 0]])
-from sklearn.preprocessing import normalize
