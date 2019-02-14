@@ -179,34 +179,39 @@ true_test_label = np.argmax(y_test, axis=1)
 
 # accuracy when market go down
 np.sum(true_test_label[true_test_label == 0] == test_set_prediction[true_test_label == 0]) / len(true_test_label[true_test_label == 0])
-# 2 / 126 = 0.016
+# 0.927
 
 # accuracy when market go up
 np.sum(true_test_label[true_test_label == 1] == test_set_prediction[true_test_label == 1]) / len(true_test_label[true_test_label == 1])
-# 109 / 111 = 0.982
+# 0.060
 
 # accuracy when predicting market will go down
 np.sum(true_test_label[test_set_prediction == 0] == test_set_prediction[test_set_prediction == 0]) / len(test_set_prediction[test_set_prediction == 0])
-# 2 / 4 = 0.5
+# 0.530
 
-# accuracy when prediction market will go up
+# accuracy when predictig market will go up
 np.sum(true_test_label[test_set_prediction == 1] == test_set_prediction[test_set_prediction == 1]) / len(test_set_prediction[test_set_prediction == 1])
-# 109 / 233 = 0.468
+# 0.417
 
 # overall accuracy
 np.sum(true_test_label == test_set_prediction) / len(true_test_label)
-# 0.468
+# 0.52
 
+def plot_history(history):
+    plt.plot(history.history['loss'])
+    plt.plot(history.history['val_loss'])
+    plt.title('model1 loss')
+    plt.ylabel('loss')
+    plt.xlabel('epoch')
+    plt.legend(['train', 'validation'], loc='upper left')
+    plt.show()
+    # summarize history for loss
+    # plt.plot(history.history['loss'])
+    # plt.plot(history.history['val_loss'])
+    # plt.title('model1 loss')
+    # plt.ylabel('loss')
+    # plt.xlabel('epoch')
+    # plt.legend(['train', 'test'], loc='upper left')
+    # plt.show()
 
-
-
-# from keras import backend as K
-#
-# inp = model.input                                           # input placeholder
-# outputs = [layer.output for layer in model.layers]          # all layer outputs
-# functors = [K.function([inp], [out]) for out in outputs]    # evaluation functions
-#
-# # Testing
-# test = np.expand_dims(x_data, axis=0)
-# layer_outs = [func([test]) for func in functors]
-# print(layer_outs)
+plot_history(history)
