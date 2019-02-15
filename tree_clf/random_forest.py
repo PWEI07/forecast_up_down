@@ -49,6 +49,10 @@ class ForestBuilder(object):
         test_data1['two_crows'] = talib.CDL2CROWS(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
         test_data1['3inside'] = talib.CDL3INSIDE(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
         test_data1['breakaway'] = talib.CDLBREAKAWAY(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['3outside'] = talib.CDL3OUTSIDE(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['gold_belt'] = talib.CDLBELTHOLD(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['morning_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['baby'] = talib.CDLCONCEALBABYSWALL(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
 
         test_data1.drop(columns=['total_turnover', 'close', 'high', 'low', 'open', 'volume'], inplace=True)
         test_data1.dropna(axis=0, inplace=True)  # get rid of nan rows
