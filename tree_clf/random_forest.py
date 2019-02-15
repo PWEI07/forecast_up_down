@@ -1,11 +1,12 @@
 import rqdatac as rd
 import numpy as np
 import talib
-from sklearn.model_selection import train_test_split, RandomizedSearchCV
+from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import MinMaxScaler
 from time import time
-from sklearn.metrics import f1_score, make_scorer
+from sklearn.metrics import f1_score, make_scorer, accuracy_score
+from pandas import Series
 rd.init()
 
 
@@ -22,10 +23,34 @@ class ForestBuilder(object):
         test_data1['MACD'] = talib.MACD(test_data1['close'], 12, 26, 9)[-1]
         test_data1['K'], test_data1['D'] = talib.STOCH(test_data1['high'], test_data1['low'], test_data1['close'])
         test_data1['J'] = 3 * test_data1['K'] - 2 * test_data1['D']
-        test_data1['AD'] = talib.AD(test_data1['high'], test_data1['low'], test_data1['close'], test_data1['volume'])
         test_data1['ADOSC'] = talib.ADOSC(test_data1['high'], test_data1['low'], test_data1['close'],
                                           test_data1['volume'])
+        temp0 = Series(data=0, index=test_data1.index)
+        test_data1['ADOSC_up_cross'] = self.cross(test_data1.ADOSC, temp0)
+        test_data1['ADOSC_down_cross'] = self.cross(temp0, test_data1.ADOSC)
+        test_data1.drop(columns=['ADOSC'], inplace=True)
         test_data1.drop(columns=['limit_down', 'limit_up'], inplace=True)
+
+        test_data1['ma5'] = test_data1['close'].rolling(window=5).mean()
+        test_data1['ma10'] = test_data1['close'].rolling(window=10).mean()
+        test_data1['sign'] = test_data1['ma5'] < test_data1['ma10']
+        test_data1['sign'] = test_data1['sign'].replace({True: 1, False: -1})
+        test_data1['ma5_minus_ma10'] = test_data1['ma5'] - test_data1['ma10']
+        test_data1['ma5_minus_ma10_lagged'] = test_data1['ma5_minus_ma10'].shift(1)
+        test_data1['delta'] = (test_data1['ma5_minus_ma10'] - test_data1['ma5_minus_ma10_lagged']) * test_data1['sign']
+        test_data1.drop(columns=['ma5', 'ma10', 'sign', 'ma5_minus_ma10', 'ma5_minus_ma10_lagged'], inplace=True)
+
+        test_data1['SAR'] = talib.SAR(test_data1['high'], test_data1['low'])
+        test_data1['high_cross_sar'] = self.cross(test_data1.high, test_data1.SAR)
+        test_data1['sar_cross_low'] = self.cross(test_data1.SAR, test_data1.low)
+        test_data1.drop(columns=['SAR'], inplace=True)
+
+        test_data1['hammer'] = talib.CDLHAMMER(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['two_crows'] = talib.CDL2CROWS(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['3inside'] = talib.CDL3INSIDE(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['breakaway'] = talib.CDLBREAKAWAY(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+
+        test_data1.drop(columns=['total_turnover', 'close', 'high', 'low', 'open', 'volume'], inplace=True)
         test_data1.dropna(axis=0, inplace=True)  # get rid of nan rows
         return test_data1
     
@@ -44,7 +69,7 @@ class ForestBuilder(object):
         return X, y
 
     def split_scale(self, X, y, test_size=0.2):
-        X_train_vali, X_test, y_train_vali, y_test = train_test_split(X, y, test_size=test_size)
+        X_train_vali, X_test, y_train_vali, y_test = train_test_split(X, y, test_size=test_size, shuffle=False)
         scaler = MinMaxScaler()
         scaler.fit(X_train_vali)
         X_train_vali_transformed = scaler.transform(X_train_vali)
@@ -63,41 +88,33 @@ class ForestBuilder(object):
                 print("Parameters: {0}".format(results['params'][candidate]))
                 print("")
 
-    def param_tunning(self, param_dist, X, y, test_size=0.2, n_iter=100, cv=4):
-        clf = RandomForestClassifier(n_estimators=1000)
-        random_search = RandomizedSearchCV(clf, param_distributions=param_dist, n_iter=n_iter, cv=cv,
-                                           scoring=make_scorer(f1_score), n_jobs=-1)
+    def param_tunning(self, param_dist, X, y, test_size=0.2, cv=4):
+        clf = RandomForestClassifier(n_estimators=500)
+        random_search = GridSearchCV(clf, param_grid=param_dist, cv=cv, scoring=make_scorer(f1_score),
+                                     n_jobs=-1)
         # split into train_vali and test set
         X_train_vali, X_test, y_train_vali, y_test = self.split_scale(X, y, test_size=test_size)
         start = time()
         random_search.fit(X_train_vali, y_train_vali)
-        print("RandomizedSearchCV took %.2f seconds for %d candidates"
-              " parameter settings." % ((time() - start), n_iter))
+        print("RandomizedSearchCV took %.2f seconds" % (time() - start))
+        best_rf = random_search.best_estimator_
+        prediction = best_rf.predict(X_test)
+        print('Test set accuracy: ', accuracy_score(y_test, prediction))
+
+        prediction = best_rf.predict(X_train_vali)
+        print('Train_vali set accuracy: ', accuracy_score(y_train_vali, prediction))
         self.report(random_search.cv_results_)
 
         return random_search
 
+    @staticmethod
+    def cross(s1, s2):
+        s1_greater_s2 = s1 > s2
+        s1_greater_s2_lagged = s1_greater_s2.shift(1)
+        result = s1_greater_s2[1:] & (~s1_greater_s2_lagged[1:]).replace({-1: True, -2: False})
+        result[s1.index[0]] = np.nan
+        return result
 
-
-#     # ======================================================================================================================
-#     X_train, X_vali_test, y_train, y_vali_test = train_test_split(test_data1, rise, test_size=0.4)
-#     X_vali, X_test, y_vali, y_test = train_test_split(X_vali_test, y_vali_test, test_size=0.5)
-#     # 既然目前不是RNN，所以就随机分割，而不是按顺序把靠前的划为训练集，靠后的划为测试集
-
-#
-#     # ======================================================================================================================
-#     # 开始构造随机森林
-#     forest = RandomForestClassifier(n_estimators=1000,
-#                                     verbose=1, min_samples_split=0.025, n_jobs=-1, max_features=0.5)
-#     forest.fit(X_train_transformed, y_train)
-#     forest.score(X_vali_transformed, y_vali)
-#     forest.score(X_train_transformed, y_train)
-#
-#
-# # ======================================================================================================================
-# # build machine learning model
-# model = keras.Sequential()
-# model.add(keras.layers.BatchNormalization())
 
 
 
