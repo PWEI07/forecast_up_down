@@ -53,23 +53,37 @@ class ForestBuilder(object):
         test_data1['gold_belt'] = talib.CDLBELTHOLD(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
         test_data1['morning_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
         test_data1['baby'] = talib.CDLCONCEALBABYSWALL(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['white_soldiers'] = talib.CDL3WHITESOLDIERS(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['grave_stone'] = talib.CDLGRAVESTONEDOJI(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['ladder_bottom'] = talib.CDLLADDERBOTTOM(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['doji_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['piercing'] = talib.CDLPIERCING(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
 
         test_data1.drop(columns=['total_turnover', 'close', 'high', 'low', 'open', 'volume'], inplace=True)
         test_data1.dropna(axis=0, inplace=True)  # get rid of nan rows
         return test_data1
     
-    def __ydata(self, start_date, end_date):
+    def __ydata(self, start_date, end_date, window):
         data_lagged = rd.get_price(self.code, start_date=start_date, end_date=end_date, frequency='1d')
-        rise = data_lagged['close'] > data_lagged['open']  # target
-        return rise
-    
-    def data(self, start_date, end_date):
+        rise = self.posterior_rolling_max(data_lagged['high'], window).values > 1.01 * data_lagged['open'].values  # target
+        return Series(data=rise, index=data_lagged.index)
+
+    @staticmethod
+    def posterior_rolling_max(series, window=5):
+        s1 = series.rolling(window=window).max()
+        s1[:-(window - 1)] = s1[window - 1:]
+        s1[-(window - 1):] = np.nan
+        return s1
+
+    def data(self, start_date, end_date, window=5):
         X = self.__xdata(start_date, end_date)
-        y = self.__ydata(start_date, end_date)
+        y = self.__ydata(start_date, end_date, window)
 
         # match the length of target to features
-        y = y[y.index.date >= rd.get_next_trading_date(X.index[0].date())]
-        X.drop(index=X.index[-1], inplace=True)
+        y = y[y.index.date >= X.index[0].date()]
+        y = y[:-(window - 1)]
+        X = X[:-(window - 1)]
+
         return X, y
 
     def split_scale(self, X, y, test_size=0.2):
@@ -95,7 +109,7 @@ class ForestBuilder(object):
     def param_tunning(self, param_dist, X, y, test_size=0.2, cv=4):
         clf = RandomForestClassifier(n_estimators=500)
         random_search = GridSearchCV(clf, param_grid=param_dist, cv=cv, scoring=make_scorer(f1_score),
-                                     n_jobs=-1)
+                                     n_jobs=-1, refit=True)
         # split into train_vali and test set
         X_train_vali, X_test, y_train_vali, y_test = self.split_scale(X, y, test_size=test_size)
         start = time()

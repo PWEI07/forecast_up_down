@@ -140,3 +140,9 @@ print(pca.components_)
 print(pca.explained_variance_)
 
 phy = np.array([[0.1, 0.2, 0.7], [0, 0, 1], [0.5, 0.5, 0]])
+
+
+data_lagged = rd.get_price('000001.XSHE', start_date='2015-01-01', end_date='2018-01-01', frequency='1d')
+data_lagged = pd.DataFrame(data_lagged)
+data_lagged['rolling_max_high'] = data_lagged.rolling(window=5, on='high').max()
+
