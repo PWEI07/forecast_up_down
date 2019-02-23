@@ -5,6 +5,8 @@ from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_c
 
 
 forest1 = ForestBuilder('000001.XSHE')
+dict1 = forest1.get_eligible_rf('2012-01-01', '2017-01-01', train_precision_threshold=0.9, test_precision_threshold=0.65)
+
 forest1_data = forest1.data('2013-01-01', '2019-02-13')
 
 temp = DataFrame(forest1_data[0])

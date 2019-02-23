@@ -100,7 +100,7 @@ class ForestBuilder(object):
     def split_scale(self, X, y, test_size=0.2):
         X_train_vali, X_test, y_train_vali, y_test = train_test_split(X, y, test_size=test_size, shuffle=False)
         scaler = MinMaxScaler()
-        cccccc
+        scaler.fit(X_train_vali)
         X_train_vali_transformed = scaler.transform(X_train_vali)
         X_test_transformed = scaler.transform(X_test)
         return X_train_vali_transformed, X_test_transformed, y_train_vali, y_test, scaler
@@ -133,7 +133,7 @@ class ForestBuilder(object):
                                                                                       "bootstrap": [False],
                                                                                           "criterion": ["entropy"]},
                         test_size=0.2, cv=4,
-                        estimators=500):
+                        estimators=500, train_precision_threshold=0.9, test_precision_threshold=0.7, F_threshold=0.7):
         """
         调用param_tunning 找到并返回符合precision_threshold要求的模型中，F score最高的那个模型
         :param param_dist:
@@ -157,7 +157,7 @@ class ForestBuilder(object):
             return None
         else:
             pass
-        min_threshold = thresholds[np.min(np.where(precision > 0.85)[0])]
+        min_threshold = thresholds[np.min(np.where(precision > train_precision_threshold)[0])]
 
         # among thresholds greater than the min_threshold, find one that maximize F score
         train_prob_pred = best_rf.predict_proba(X_train_vali)[:, 1]
@@ -171,17 +171,17 @@ class ForestBuilder(object):
             else:
                 pass
 
-        if largest_F < 0.7:
+        if largest_F < F_threshold:
             return None
         else:
             pass
 
         # test on the test set
-        test_prob_pred = best_rf.predict_proba(X_test)
+        test_prob_pred = best_rf.predict_proba(X_test)[:, 1]
         test_pred = test_prob_pred > best_threshold
-        test_confusion_mat = confusion_matrix(y_test, test_pred)
-        test_precision = test_confusion_mat[1, 1] / sum(test_confusion_mat[:, 1])
-        if f1_score(y_test, test_pred) > 0.7 and test_precision > 0.7:
+        # test_confusion_mat = confusion_matrix(y_test, test_pred)
+        test_precision = sum(test_pred[test_pred == 1] == y_test[test_pred == 1])/sum(test_pred)
+        if f1_score(y_test, test_pred) > F_threshold and test_precision > test_precision_threshold:
             scaler.fit(X)  # refit the scaler on all data available
             best_rf_all_data = best_rf.fit(scaler.transform(X), y)  # fit the model on all data available
             return {'best_rf': best_rf_all_data, 'saler': scaler, 'threshold': best_threshold, 'test_precision': test_precision}
