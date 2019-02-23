@@ -29,9 +29,6 @@ class ForestBuilder(object):
         test_data1['J'] = 3 * test_data1['K'] - 2 * test_data1['D']
         test_data1['ADOSC'] = talib.ADOSC(test_data1['high'], test_data1['low'], test_data1['close'],
                                           test_data1['volume'])
-        temp0 = Series(data=0, index=test_data1.index)
-        test_data1['ADOSC_up_cross'] = self.cross(test_data1.ADOSC, temp0)
-        test_data1['ADOSC_down_cross'] = self.cross(temp0, test_data1.ADOSC)
         test_data1.drop(columns=['ADOSC'], inplace=True)
         test_data1.drop(columns=['limit_down', 'limit_up'], inplace=True)
 
@@ -48,26 +45,7 @@ class ForestBuilder(object):
         test_data1['high_cross_sar'] = self.cross(test_data1.high, test_data1.SAR)
         test_data1['sar_cross_low'] = self.cross(test_data1.SAR, test_data1.low)
         test_data1.drop(columns=['SAR'], inplace=True)
-
-        test_data1['hammer'] = talib.CDLHAMMER(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['two_crows'] = talib.CDL2CROWS(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['3inside'] = talib.CDL3INSIDE(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['breakaway'] = talib.CDLBREAKAWAY(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['3outside'] = talib.CDL3OUTSIDE(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
         test_data1['gold_belt'] = talib.CDLBELTHOLD(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['morning_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low,
-                                                              test_data1.close)
-        test_data1['baby'] = talib.CDLCONCEALBABYSWALL(test_data1.open, test_data1.high, test_data1.low,
-                                                       test_data1.close)
-        test_data1['white_soldiers'] = talib.CDL3WHITESOLDIERS(test_data1.open, test_data1.high, test_data1.low,
-                                                               test_data1.close)
-        test_data1['grave_stone'] = talib.CDLGRAVESTONEDOJI(test_data1.open, test_data1.high, test_data1.low,
-                                                            test_data1.close)
-        test_data1['ladder_bottom'] = talib.CDLLADDERBOTTOM(test_data1.open, test_data1.high, test_data1.low,
-                                                            test_data1.close)
-        test_data1['doji_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low,
-                                                           test_data1.close)
-        test_data1['piercing'] = talib.CDLPIERCING(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
 
         test_data1.drop(columns=['total_turnover', 'close', 'high', 'low', 'open', 'volume'], inplace=True)
         test_data1.dropna(axis=0, inplace=True)  # get rid of nan rows
@@ -127,13 +105,13 @@ class ForestBuilder(object):
 
         return grid_search, X_train_vali, X_test, y_train_vali, y_test, scaler
 
-    def get_eligible_rf(self, start_date, end_date, precision_threshold=0.85, param_dist={"max_depth": [6],
-                                                                                      "max_features": [None],
-                                                                                      "min_samples_split": [0.01],
-                                                                                      "bootstrap": [False],
-                                                                                          "criterion": ["entropy"]},
+    def get_eligible_rf(self, start_date, end_date, param_dist={"max_depth": [6],
+                                                                "max_features": [None],
+                                                                "min_samples_split": [0.01],
+                                                                "bootstrap": [False],
+                                                                "criterion": ["entropy"]},
                         test_size=0.2, cv=4,
-                        estimators=500, train_precision_threshold=0.9, test_precision_threshold=0.7, F_threshold=0.7):
+                        estimators=500, precision_threshold=0.7, F_threshold=0.7):
         """
         调用param_tunning 找到并返回符合precision_threshold要求的模型中，F score最高的那个模型
         :param param_dist:
@@ -146,47 +124,67 @@ class ForestBuilder(object):
         print("start getting best random forest model for ", self.code, "\n\n")
         X, y = self.data(start_date, end_date)
         start = time()
-        search_result, X_train_vali, X_test, y_train_vali, y_test, scaler = self.param_tunning(param_dist=param_dist, X=X, y=y, test_size=test_size, cv=cv,
+        search_result, X_train_vali, X_test, y_train_vali, y_test, scaler = self.param_tunning(param_dist=param_dist,
+                                                                                               X=X, y=y,
+                                                                                               test_size=test_size,
+                                                                                               cv=cv,
                                                                                                estimators=estimators)
         print("GridSearchCV took %.2f seconds" % (time() - start))
         best_rf = search_result.best_estimator_  # 这是最佳参数组成的模型
 
-        # 找到使得X_train的precision大于0.85的最小的阈值
-        precision, recall, thresholds = precision_recall_curve(y_train_vali, best_rf.predict_proba(X_train_vali)[:,1])
-        if len(np.where(precision > 0.85)[0]) == 0:
-            return None
-        else:
-            pass
-        min_threshold = thresholds[np.min(np.where(precision > train_precision_threshold)[0])]
-
-        # among thresholds greater than the min_threshold, find one that maximize F score
-        train_prob_pred = best_rf.predict_proba(X_train_vali)[:, 1]
-        largest_F = 0
-        best_threshold = min_threshold
-        for threshold in thresholds[thresholds > min_threshold]:
-            classcification = train_prob_pred >= threshold
-            if f1_score(y_train_vali, classcification) > largest_F:
-                largest_F = f1_score(y_train_vali, classcification)
-                best_threshold = threshold
-            else:
-                pass
-
-        if largest_F < F_threshold:
+        # 如果训练集或测试集F score小于F score阈值，返回None
+        test_pred = best_rf.predict(X_test)
+        f1_test = f1_score(y_test, test_pred)
+        if min(f1_score(y_train_vali, best_rf.predict(X_train_vali)), f1_test) < F_threshold:
             return None
         else:
             pass
 
-        # test on the test set
-        test_prob_pred = best_rf.predict_proba(X_test)[:, 1]
-        test_pred = test_prob_pred > best_threshold
-        # test_confusion_mat = confusion_matrix(y_test, test_pred)
-        test_precision = sum(test_pred[test_pred == 1] == y_test[test_pred == 1])/sum(test_pred)
-        if f1_score(y_test, test_pred) > F_threshold and test_precision > test_precision_threshold:
+        test_confusion_mat = confusion_matrix(y_test, test_pred)
+        test_precision = test_confusion_mat[1, 1] / sum(test_confusion_mat[:, 1])
+        if test_precision < precision_threshold:
+            return None
+        else:
             scaler.fit(X)  # refit the scaler on all data available
             best_rf_all_data = best_rf.fit(scaler.transform(X), y)  # fit the model on all data available
-            return {'best_rf': best_rf_all_data, 'saler': scaler, 'threshold': best_threshold, 'test_precision': test_precision}
-        else:
-            return None
+            return {'best_rf': best_rf_all_data, 'scaler': scaler, 'test_precision': test_precision, 'test_f1': f1_test}
+
+        # # 找到使得X_train的precision大于0.85的最小的阈值
+        # precision, recall, thresholds = precision_recall_curve(y_train_vali, best_rf.predict_proba(X_train_vali)[:,1])
+        # if len(np.where(precision > 0.85)[0]) == 0:
+        #     return None
+        # else:
+        #     pass
+        # min_threshold = thresholds[np.min(np.where(precision > precision_threshold)[0])]
+        #
+        # # among thresholds greater than the min_threshold, find one that maximize F score
+        # train_prob_pred = best_rf.predict_proba(X_train_vali)[:, 1]
+        # largest_F = 0
+        # best_threshold = min_threshold
+        # for threshold in thresholds[thresholds > min_threshold]:
+        #     classcification = train_prob_pred >= threshold
+        #     if f1_score(y_train_vali, classcification) > largest_F:
+        #         largest_F = f1_score(y_train_vali, classcification)
+        #         best_threshold = threshold
+        #     else:
+        #         pass
+        #
+        # if largest_F < F_threshold:
+        #     return None
+        # else:
+        #     pass
+        #
+        # # test on the test set
+        # test_prob_pred = best_rf.predict_proba(X_test)[:, 1]
+        # test_pred = test_prob_pred > best_threshold
+        # # test_confusion_mat = confusion_matrix(y_test, test_pred)
+        # test_precision = sum(test_pred[test_pred == 1] == y_test[test_pred == 1])/sum(test_pred)
+        # if f1_score(y_test, test_pred) > F_threshold and test_precision > precision_threshold:
+        #     scaler.fit(X)  # refit the scaler on all data available
+        #     best_rf_all_data = best_rf.fit(scaler.transform(X), y)  # fit the model on all data available
+        #     return {'best_rf': best_rf_all_data, 'saler': scaler, 'threshold': best_threshold, 'test_precision': test_precision}
+        # else:
+        #     return None
 
     @staticmethod
     def cross(s1, s2):
