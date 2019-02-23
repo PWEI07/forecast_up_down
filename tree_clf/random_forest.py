@@ -1,3 +1,6 @@
+# coding=utf-8
+from builtins import *
+
 import rqdatac as rd
 import numpy as np
 import talib
@@ -5,8 +8,9 @@ from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
 from sklearn.preprocessing import MinMaxScaler
 from time import time
-from sklearn.metrics import f1_score, make_scorer, accuracy_score
+from sklearn.metrics import f1_score, make_scorer, accuracy_score, precision_recall_curve, confusion_matrix
 from pandas import Series
+
 rd.init()
 
 
@@ -51,21 +55,28 @@ class ForestBuilder(object):
         test_data1['breakaway'] = talib.CDLBREAKAWAY(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
         test_data1['3outside'] = talib.CDL3OUTSIDE(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
         test_data1['gold_belt'] = talib.CDLBELTHOLD(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['morning_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['baby'] = talib.CDLCONCEALBABYSWALL(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['white_soldiers'] = talib.CDL3WHITESOLDIERS(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['grave_stone'] = talib.CDLGRAVESTONEDOJI(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['ladder_bottom'] = talib.CDLLADDERBOTTOM(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
-        test_data1['doji_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
+        test_data1['morning_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low,
+                                                              test_data1.close)
+        test_data1['baby'] = talib.CDLCONCEALBABYSWALL(test_data1.open, test_data1.high, test_data1.low,
+                                                       test_data1.close)
+        test_data1['white_soldiers'] = talib.CDL3WHITESOLDIERS(test_data1.open, test_data1.high, test_data1.low,
+                                                               test_data1.close)
+        test_data1['grave_stone'] = talib.CDLGRAVESTONEDOJI(test_data1.open, test_data1.high, test_data1.low,
+                                                            test_data1.close)
+        test_data1['ladder_bottom'] = talib.CDLLADDERBOTTOM(test_data1.open, test_data1.high, test_data1.low,
+                                                            test_data1.close)
+        test_data1['doji_star'] = talib.CDLMORNINGDOJISTAR(test_data1.open, test_data1.high, test_data1.low,
+                                                           test_data1.close)
         test_data1['piercing'] = talib.CDLPIERCING(test_data1.open, test_data1.high, test_data1.low, test_data1.close)
 
         test_data1.drop(columns=['total_turnover', 'close', 'high', 'low', 'open', 'volume'], inplace=True)
         test_data1.dropna(axis=0, inplace=True)  # get rid of nan rows
         return test_data1
-    
+
     def __ydata(self, start_date, end_date, window):
         data_lagged = rd.get_price(self.code, start_date=start_date, end_date=end_date, frequency='1d')
-        rise = self.posterior_rolling_max(data_lagged['high'], window).values > 1.01 * data_lagged['open'].values  # target
+        rise = self.posterior_rolling_max(data_lagged['high'], window).values > 1.01 * data_lagged[
+            'open'].values  # target
         return Series(data=rise, index=data_lagged.index)
 
     @staticmethod
@@ -89,10 +100,10 @@ class ForestBuilder(object):
     def split_scale(self, X, y, test_size=0.2):
         X_train_vali, X_test, y_train_vali, y_test = train_test_split(X, y, test_size=test_size, shuffle=False)
         scaler = MinMaxScaler()
-        scaler.fit(X_train_vali)
+        cccccc
         X_train_vali_transformed = scaler.transform(X_train_vali)
         X_test_transformed = scaler.transform(X_test)
-        return X_train_vali_transformed, X_test_transformed, y_train_vali, y_test
+        return X_train_vali_transformed, X_test_transformed, y_train_vali, y_test, scaler
 
     @staticmethod
     def report(results, n_top=3):
@@ -101,29 +112,81 @@ class ForestBuilder(object):
             for candidate in candidates:
                 print("Model with rank: {0}".format(i))
                 print("Mean validation score: {0:.3f} (std: {1:.3f})".format(
-                      results['mean_test_score'][candidate],
-                      results['std_test_score'][candidate]))
+                    results['mean_test_score'][candidate],
+                    results['std_test_score'][candidate]))
                 print("Parameters: {0}".format(results['params'][candidate]))
                 print("")
 
-    def param_tunning(self, param_dist, X, y, test_size=0.2, cv=4):
-        clf = RandomForestClassifier(n_estimators=500)
-        random_search = GridSearchCV(clf, param_grid=param_dist, cv=cv, scoring=make_scorer(f1_score),
-                                     n_jobs=-1, refit=True)
+    def param_tunning(self, param_dist, X, y, test_size=0.2, cv=4, estimators=500):
+        clf = RandomForestClassifier(n_estimators=estimators)
+        grid_search = GridSearchCV(clf, param_grid=param_dist, cv=cv, scoring=make_scorer(f1_score),
+                                   n_jobs=-1, refit=True)
         # split into train_vali and test set
-        X_train_vali, X_test, y_train_vali, y_test = self.split_scale(X, y, test_size=test_size)
+        X_train_vali, X_test, y_train_vali, y_test, scaler = self.split_scale(X, y, test_size=test_size)
+        grid_search.fit(X_train_vali, y_train_vali)
+
+        return grid_search, X_train_vali, X_test, y_train_vali, y_test, scaler
+
+    def get_eligible_rf(self, start_date, end_date, precision_threshold=0.85, param_dist={"max_depth": [6],
+                                                                                      "max_features": [None],
+                                                                                      "min_samples_split": [0.01],
+                                                                                      "bootstrap": [False],
+                                                                                          "criterion": ["entropy"]},
+                        test_size=0.2, cv=4,
+                        estimators=500):
+        """
+        调用param_tunning 找到并返回符合precision_threshold要求的模型中，F score最高的那个模型
+        :param param_dist:
+        :param cv:
+        :param test_size:
+        :param start_date:
+        :param end_date:
+        :return:
+        """
+        print("start getting best random forest model for ", self.code, "\n\n")
+        X, y = self.data(start_date, end_date)
         start = time()
-        random_search.fit(X_train_vali, y_train_vali)
-        print("RandomizedSearchCV took %.2f seconds" % (time() - start))
-        best_rf = random_search.best_estimator_
-        prediction = best_rf.predict(X_test)
-        print('Test set accuracy: ', accuracy_score(y_test, prediction))
+        search_result, X_train_vali, X_test, y_train_vali, y_test, scaler = self.param_tunning(param_dist=param_dist, X=X, y=y, test_size=test_size, cv=cv,
+                                                                                               estimators=estimators)
+        print("GridSearchCV took %.2f seconds" % (time() - start))
+        best_rf = search_result.best_estimator_  # 这是最佳参数组成的模型
 
-        prediction = best_rf.predict(X_train_vali)
-        print('Train_vali set accuracy: ', accuracy_score(y_train_vali, prediction))
-        self.report(random_search.cv_results_)
+        # 找到使得X_train的precision大于0.85的最小的阈值
+        precision, recall, thresholds = precision_recall_curve(y_train_vali, best_rf.predict_proba(X_train_vali)[:,1])
+        if len(np.where(precision > 0.85)[0]) == 0:
+            return None
+        else:
+            pass
+        min_threshold = thresholds[np.min(np.where(precision > 0.85)[0])]
 
-        return random_search
+        # among thresholds greater than the min_threshold, find one that maximize F score
+        train_prob_pred = best_rf.predict_proba(X_train_vali)[:, 1]
+        largest_F = 0
+        best_threshold = min_threshold
+        for threshold in thresholds[thresholds > min_threshold]:
+            classcification = train_prob_pred >= threshold
+            if f1_score(y_train_vali, classcification) > largest_F:
+                largest_F = f1_score(y_train_vali, classcification)
+                best_threshold = threshold
+            else:
+                pass
+
+        if largest_F < 0.7:
+            return None
+        else:
+            pass
+
+        # test on the test set
+        test_prob_pred = best_rf.predict_proba(X_test)
+        test_pred = test_prob_pred > best_threshold
+        test_confusion_mat = confusion_matrix(y_test, test_pred)
+        test_precision = test_confusion_mat[1, 1] / sum(test_confusion_mat[:, 1])
+        if f1_score(y_test, test_pred) > 0.7 and test_precision > 0.7:
+            scaler.fit(X)  # refit the scaler on all data available
+            best_rf_all_data = best_rf.fit(scaler.transform(X), y)  # fit the model on all data available
+            return {'best_rf': best_rf_all_data, 'saler': scaler, 'threshold': best_threshold, 'test_precision': test_precision}
+        else:
+            return None
 
     @staticmethod
     def cross(s1, s2):
@@ -132,11 +195,3 @@ class ForestBuilder(object):
         result = s1_greater_s2[1:] & (~s1_greater_s2_lagged[1:]).replace({-1: True, -2: False})
         result[s1.index[0]] = np.nan
         return result
-
-
-
-
-
-
-
-
