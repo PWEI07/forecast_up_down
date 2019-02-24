@@ -1,4 +1,6 @@
 import talib
+from tree_clf.random_forest import ForestBuilder
+model = ForestBuilder  # 分类所用的模型
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 def init(context):
