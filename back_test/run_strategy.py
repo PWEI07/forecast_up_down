@@ -4,15 +4,15 @@ import pandas as pd
 
 config = {
     "base": {
-        "start_date": "2017-10-09",
-        "end_date": "2018-11-21",
+        "start_date": "2016-01-01",
+        "end_date": "2019-02-22",
         "run_type": "b",
         "benchmark": "000985.XSHG",
-        "frequency": "1d"
+        "frequency": "1m"
         , "data_bundle_path": "/Users/peter_zirui_wei/Documents/rqpro/bundle"
         , "accounts": {
-            "future": 1000000,
-            "stock": 1000000000
+            # "future": 1000000,
+            "stock": 10000000
         }
     },
     "extra": {

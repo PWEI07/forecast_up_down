@@ -2,7 +2,8 @@ import talib
 from tree_clf.random_forest import ForestBuilder
 from datetime import timedelta
 from pandas import Series, DataFrame
-model = ForestBuilder  # 分类所用的模型
+import numpy as np
+
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 def init(context):
@@ -20,6 +21,11 @@ def init(context):
     context.F_threshold = 0.7  # 设置F1 score阈值，通过此阈值的模型才可以入选
     context.transaction = DataFrame()  # 用于记录买入的品种，日期，价格
     scheduler.run_daily(sell_old, time_rule=market_open(minute=0))  # 每天09:31卖掉持有日大于等于5天的股票
+    scheduler.run_daily(order_buy_list, time_rule=market_open(minute=0))  # 每天09:31买入context.buy_list中的股票
+
+    for i in np.arange(0, 240, 5):
+        scheduler.run_daily(check_and_sell, time_rule=market_open(minute=i))  # 为加快回测运行速度，每隔5分钟（而不是每分钟）检查是否有市价超过成本价1%的股票并卖出
+    context.buy_list = []  # 预测要涨 需要买的股票
 
 
 def get_models(context):
@@ -67,37 +73,58 @@ def record_transaction(context, bar_dict, order_book_id):
                                                             name=order_book_id))
 
 
+def make_prediction(context):
+    """
+    对每个达标模型，获取对应股票最近60个交易日的输入数据，利用模型进行预测
+    :param context:
+    :return:
+    """
+    context.buy_series = Series()
+    for stock in context.eligible_models:
+        if context.portfolio.positions[i].quantity != 0:
+            continue  # 如果该模型已经开仓 则跳过
+        else:
+            pass
+        model_generator = context.model_generators[stock]  # 调取模型生成器
+        start_date = get_previous_trading_date(context.now, 101)
+        end_date = get_previous_trading_date(context.now, 1)
+        model_X = model_generator.xdata(start_date, end_date)  # 获取对应股票最近100个交易日的输入数据
+        predictions = context.eligible_models[stock].predict(context.eligible_models_scalers[stock].transform(model_X))
+        if predictions[-1]:
+            context.buy_list.append(stock)
+        else:
+            pass
+
+
+def order_buy_list(context, bar_dict):
+    for stock in context.buy_list:
+        order_percent(stock, context.eligible_models_weights[stock])
+        record_transaction(context, bar_dict, stock)
+
+
+def check_and_sell(context, bar_dict):
+    """
+    对于持有的股票，如果现在市场价高于其成本价1%以上，则全部卖出
+    :param context:
+    :param bar_dict:
+    :return:
+    """
+    for i in context.transaction.index:
+        if bar_dict[i].last >= context.transaction.loc[i].cost * 1.01:
+            order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
+        else:
+            pass
+
+
 # before_trading此函数会在每天策略交易开始前被调用，当天只会被调用一次
 def before_trading(context):
-    pass
+    make_prediction(context)  # 每天开始交易前，计算有哪些股票上涨的概率较大
+
 
 # 你选择的证券的数据更新将会触发此段逻辑，例如日或分钟历史数据切片或者是实时数据切片更新
 def handle_bar(context, bar_dict):
+    pass
 
-    # 因为策略需要用到均线，所以需要读取历史数据
-    prices = history_bars(context.s1, context.LONGPERIOD+1, '1d', 'close')
-
-    # 使用talib计算长短两根均线，均线以array的格式表达
-    short_avg = talib.SMA(prices, context.SHORTPERIOD)
-    long_avg = talib.SMA(prices, context.LONGPERIOD)
-
-    plot("short avg", short_avg[-1])
-    plot("long avg", long_avg[-1])
-
-    # 计算现在portfolio中股票的仓位
-    cur_position = context.portfolio.positions[context.s1].quantity
-    # 计算现在portfolio中的现金可以购买多少股票
-    shares = context.portfolio.cash/bar_dict[context.s1].close
-
-    # 如果短均线从上往下跌破长均线，也就是在目前的bar短线平均值低于长线平均值，而上一个bar的短线平均值高于长线平均值
-    if short_avg[-1] - long_avg[-1] < 0 and short_avg[-2] - long_avg[-2] > 0 and cur_position > 0:
-        # 进行清仓
-        order_target_value(context.s1, 0)
-
-    # 如果短均线从下往上突破长均线，为入场信号
-    if short_avg[-1] - long_avg[-1] > 0 and short_avg[-2] - long_avg[-2] < 0:
-        # 满仓入股
-        order_shares(context.s1, shares)
 
 # after_trading函数会在每天交易结束后被调用，当天只会被调用一次
 def after_trading(context):
