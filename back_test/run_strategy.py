@@ -4,12 +4,12 @@ import pandas as pd
 
 config = {
     "base": {
-        "start_date": "2016-01-01",
-        "end_date": "2019-02-22",
+        "start_date": "2017-01-01",
+        "end_date": "2019-02-20",
         "run_type": "b",
         "benchmark": "000985.XSHG",
         "frequency": "1m"
-        , "data_bundle_path": "/Users/peter_zirui_wei/Documents/rqpro/bundle"
+        , "data_bundle_path": "/Users/peter_zirui_wei/Documents/rqpro/bundle/"
         , "accounts": {
             # "future": 1000000,
             "stock": 10000000
@@ -26,17 +26,17 @@ config = {
             "plot": True,
             "volume_limit": False
         }
-        # ,
-        # "ricequant_data": {
-        #     "priority": 101,
-        #     "enabled": True,
-        #     "rqdata_client_addr": "rqdatad.ricequant.com",
-        #     "rqdata_client_port": 16003,
-        #     "rqdata_client_username": "ricequant",
-        #     "rqdata_client_password": "Ricequant123",
-        #     # "redis_url": "redis://tinker:6379/2"
-        #     "redis_url": "redis://paladin:6380/2"
-        # }
+        ,
+        "ricequant_data": {
+            "priority": 101,
+            "enabled": True,
+            "rqdata_client_addr": "rqdatad.ricequant.com",
+            "rqdata_client_port": 16003,
+            "rqdata_client_username": "ricequant",
+            "rqdata_client_password": "Ricequant123",
+            # "redis_url": "redis://tinker:6379/2"
+            "redis_url": "redis://paladin:6380/2"
+        }
     }
 }
 

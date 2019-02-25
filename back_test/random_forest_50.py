@@ -7,7 +7,9 @@ import numpy as np
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 def init(context):
-    context.pool = index_components('000016.XSHG', date='2012-01-01')
+    # context.pool = index_components('000016.XSHG', date='2012-01-01')
+    context.pool = ['600489.XSHG', '600585.XSHG', '601899.XSHG', '600188.XSHG', '600348.XSHG', '601688.XSHG', '600111.XSHG',
+                    '601699.XSHG']
     context.model_generators = {}  # 用于存储投资池中各个股票的模型生成器
     for i in context.pool:
         context.model_generators[i] = ForestBuilder(i)
@@ -16,19 +18,19 @@ def init(context):
     context.eligible_models_weights = Series()  # 用于存储达标模型的资金权重
     context.eligible_models_scalers = {}  # 用于存储达标模型的scaler
 
-    scheduler.run_monthly(get_models)  # 每个月训练一次模型，选出符合标准的放入context.eligible_models
-    context.precision_threshold = 0.65  # 设置精确度阈值，通过此阈值的模型才可以入选
-    context.F_threshold = 0.7  # 设置F1 score阈值，通过此阈值的模型才可以入选
-    context.transaction = DataFrame()  # 用于记录买入的品种，日期，价格
+    scheduler.run_monthly(get_models, tradingday=1)  # 每个月训练一次模型，选出符合标准的放入context.eligible_models
+    context.precision_threshold = 0.7  # 设置精确度阈值，通过此阈值的模型才可以入选
+    context.F_threshold = 0.8  # 设置F1 score阈值，通过此阈值的模型才可以入选
+    context.transaction = DataFrame(columns=['date', 'cost'])  # 用于记录买入的品种，日期，价格
     scheduler.run_daily(sell_old, time_rule=market_open(minute=0))  # 每天09:31卖掉持有日大于等于5天的股票
     scheduler.run_daily(order_buy_list, time_rule=market_open(minute=0))  # 每天09:31买入context.buy_list中的股票
 
-    for i in np.arange(0, 240, 5):
-        scheduler.run_daily(check_and_sell, time_rule=market_open(minute=i))  # 为加快回测运行速度，每隔5分钟（而不是每分钟）检查是否有市价超过成本价1%的股票并卖出
+    # for i in np.arange(0, 240, 5):
+    #     scheduler.run_daily(check_and_sell, time_rule=market_open(minute=i))  # 为加快回测运行速度，每隔5分钟（而不是每分钟）检查是否有市价超过成本价1%的股票并卖出
     context.buy_list = []  # 预测要涨 需要买的股票
 
 
-def get_models(context):
+def get_models(context, bar_dict):
     """
     获得该期达标模型，以及其scaler，并根据其模型得分计算对其分配的资金权重
     :param context:
@@ -43,6 +45,8 @@ def get_models(context):
                                                                  precision_threshold=context.precision_threshold,
                                                                  F_threshold=context.F_threshold)
         if model_i is not None:
+            print(i, ':')
+            print(model_i, '\n\n')
             context.eligible_models[i] = model_i['best_rf']
             context.eligible_models_scalers[i] = model_i['scaler']
             context.eligible_models_weights[i] = model_i['test_precision'] + model_i['test_f1']
@@ -56,8 +60,9 @@ def sell_old(context, bar_dict):
     :param bar_dict:
     :return:
     """
-    temp_sell_df = context.transaction.date[(context.now - context.transaction.date) >= timedelta(days=5)]
+    temp_sell_df = context.transaction[(context.now - context.transaction['date']) >= timedelta(days=5)]
     for i in temp_sell_df.index:
+        print('start to sell old ', i)
         order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
         context.transaction.drop(index=i, inplace=True)
 
@@ -81,7 +86,7 @@ def make_prediction(context):
     """
     context.buy_series = Series()
     for stock in context.eligible_models:
-        if context.portfolio.positions[i].quantity != 0:
+        if context.portfolio.positions[stock].quantity != 0:
             continue  # 如果该模型已经开仓 则跳过
         else:
             pass
@@ -98,6 +103,7 @@ def make_prediction(context):
 
 def order_buy_list(context, bar_dict):
     for stock in context.buy_list:
+        print('buy stock ', stock)
         order_percent(stock, context.eligible_models_weights[stock])
         record_transaction(context, bar_dict, stock)
 
@@ -111,7 +117,9 @@ def check_and_sell(context, bar_dict):
     """
     for i in context.transaction.index:
         if bar_dict[i].last >= context.transaction.loc[i].cost * 1.01:
+            print('sell and make profit on ', i)
             order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
+            context.transaction.drop(index=i, inplace=True)
         else:
             pass
 
@@ -123,7 +131,7 @@ def before_trading(context):
 
 # 你选择的证券的数据更新将会触发此段逻辑，例如日或分钟历史数据切片或者是实时数据切片更新
 def handle_bar(context, bar_dict):
-    pass
+    check_and_sell(context, bar_dict)
 
 
 # after_trading函数会在每天交易结束后被调用，当天只会被调用一次
