@@ -8,8 +8,7 @@ import numpy as np
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 def init(context):
     # context.pool = index_components('000016.XSHG', date='2012-01-01')
-    context.pool = ['600489.XSHG', '600585.XSHG', '601899.XSHG', '600188.XSHG', '600348.XSHG', '601688.XSHG', '600111.XSHG',
-                    '601699.XSHG']
+    context.pool = ['600489.XSHG', '600585.XSHG', '601899.XSHG', '600188.XSHG', '600348.XSHG']
     context.model_generators = {}  # 用于存储投资池中各个股票的模型生成器
     for i in context.pool:
         context.model_generators[i] = ForestBuilder(i)
@@ -36,11 +35,13 @@ def get_models(context, bar_dict):
     :param context:
     :return:
     """
+    context.eligible_models = {}  # 先将上一期达标模型清空
+    context.eligible_models_scalers = {}
+    context.eligible_models_weights = Series()
+
     for i in context.pool:
         end_date = context.now.strftime('%Y-%m-%d')
         start_date = (context.now - timedelta(days=365*4)).strftime('%Y-%m-%d')
-        context.eligible_models = {}  # 先将上一期达标模型清空
-        context.eligible_models_weights = Series()  # # 先将上一期达标模型的资金权重清空
         model_i = context.model_generators[i].get_eligible_model(start_date, end_date,
                                                                  precision_threshold=context.precision_threshold,
                                                                  F_threshold=context.F_threshold)
@@ -64,7 +65,10 @@ def sell_old(context, bar_dict):
     for i in temp_sell_df.index:
         print('start to sell old ', i)
         order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
-        context.transaction.drop(index=i, inplace=True)
+        if context.portfolio.positions[i].quantity == 0:
+            context.transaction.drop(index=i, inplace=True)
+        else:
+            pass
 
 
 def record_transaction(context, bar_dict, order_book_id):
@@ -84,7 +88,7 @@ def make_prediction(context):
     :param context:
     :return:
     """
-    context.buy_series = Series()
+    context.buy_list = []
     for stock in context.eligible_models:
         if context.portfolio.positions[stock].quantity != 0:
             continue  # 如果该模型已经开仓 则跳过
@@ -104,8 +108,14 @@ def make_prediction(context):
 def order_buy_list(context, bar_dict):
     for stock in context.buy_list:
         print('buy stock ', stock)
-        order_percent(stock, context.eligible_models_weights[stock])
-        record_transaction(context, bar_dict, stock)
+        order = order_percent(stock, context.eligible_models_weights[stock])
+        if order is not None:
+            if order.filled_quantity != 0:
+                record_transaction(context, bar_dict, stock)
+            else:
+                pass
+        else:
+            pass
 
 
 def check_and_sell(context, bar_dict):
@@ -116,10 +126,13 @@ def check_and_sell(context, bar_dict):
     :return:
     """
     for i in context.transaction.index:
-        if bar_dict[i].last >= context.transaction.loc[i].cost * 1.01:
+        if bar_dict[i].last >= np.mean(context.transaction.loc[i].cost) * 1.01:
             print('sell and make profit on ', i)
             order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
-            context.transaction.drop(index=i, inplace=True)
+            if context.portfolio.positions[i].quantity == 0:
+                context.transaction.drop(index=i, inplace=True)
+            else:
+                pass
         else:
             pass
 
