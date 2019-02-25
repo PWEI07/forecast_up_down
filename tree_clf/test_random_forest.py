@@ -4,13 +4,14 @@ from sklearn.ensemble import RandomForestClassifier
 from sklearn.metrics import accuracy_score, confusion_matrix, precision_recall_curve
 
 
-forest1 = ForestBuilder('000001.XSHE')
-dict1 = forest1.get_eligible_rf('2013-01-01', '2017-01-01', precision_threshold=0.5, F_threshold=0.6)
-
-forest1_data = forest1.data('2017-01-01', '2018-01-01')
-
+forest1 = ForestBuilder('600446.XSHG')
+forest1_data = forest1.data('2017-01-04', '2018-01-01')
 temp = DataFrame(forest1_data[0])
 temp1 = DataFrame(forest1_data[1])
+
+dict1 = forest1.get_eligible_model('2012-01-01', '2017-01-01', precision_threshold=0.6, F_threshold=0.6)
+
+
 
 X_test = dict1['scaler'].transform(temp)
 test_pred = dict1['best_rf'].predict(X_test)

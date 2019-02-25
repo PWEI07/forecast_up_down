@@ -1,6 +1,6 @@
 # coding=utf-8
 from builtins import *
-
+from BaseModel import BaseModel
 import rqdatac as rd
 import numpy as np
 import talib
@@ -14,12 +14,11 @@ from pandas import Series
 rd.init()
 
 
-class ForestBuilder(object):
-
+class ForestBuilder(BaseModel):
     def __init__(self, code):
-        self.code = code
+        super(ForestBuilder, self).__init__(code=code)
 
-    def __xdata(self, start_date, end_date):
+    def xdata(self, start_date, end_date):
         test_data1 = rd.get_price(self.code, start_date=start_date, end_date=end_date, frequency='1d')
         test_data1['RSI'] = talib.RSI(test_data1['close'], timeperiod=9)
         test_data1['CMO'] = talib.CMO(test_data1['close'], timeperiod=14)
@@ -51,49 +50,14 @@ class ForestBuilder(object):
         test_data1.dropna(axis=0, inplace=True)  # get rid of nan rows
         return test_data1
 
-    def __ydata(self, start_date, end_date, window):
-        data_lagged = rd.get_price(self.code, start_date=start_date, end_date=end_date, frequency='1d')
-        rise = self.posterior_rolling_max(data_lagged['high'], window).values > 1.01 * data_lagged[
-            'open'].values  # target
-        return Series(data=rise, index=data_lagged.index)
-
-    @staticmethod
-    def posterior_rolling_max(series, window=5):
-        s1 = series.rolling(window=window).max()
-        s1[:-(window - 1)] = s1[window - 1:]
-        s1[-(window - 1):] = np.nan
-        return s1
-
     def data(self, start_date, end_date, window=5):
-        X = self.__xdata(start_date, end_date)
-        y = self.__ydata(start_date, end_date, window)
+        X = self.xdata(start_date, end_date)
+        y = super(ForestBuilder, self).ydata(start_date, end_date, window=window)
+        # y = super().__ydata(start_date, end_date, window=window, equity=self.code)
 
         # match the length of target to features
-        y = y[y.index.date >= X.index[0].date()]
-        y = y[:-(window - 1)]
-        X = X[:-(window - 1)]
-
+        X, y = super().data(X, y, window=window)
         return X, y
-
-    def split_scale(self, X, y, test_size=0.2):
-        X_train_vali, X_test, y_train_vali, y_test = train_test_split(X, y, test_size=test_size, shuffle=False)
-        scaler = MinMaxScaler()
-        scaler.fit(X_train_vali)
-        X_train_vali_transformed = scaler.transform(X_train_vali)
-        X_test_transformed = scaler.transform(X_test)
-        return X_train_vali_transformed, X_test_transformed, y_train_vali, y_test, scaler
-
-    @staticmethod
-    def report(results, n_top=3):
-        for i in range(1, n_top + 1):
-            candidates = np.flatnonzero(results['rank_test_score'] == i)
-            for candidate in candidates:
-                print("Model with rank: {0}".format(i))
-                print("Mean validation score: {0:.3f} (std: {1:.3f})".format(
-                    results['mean_test_score'][candidate],
-                    results['std_test_score'][candidate]))
-                print("Parameters: {0}".format(results['params'][candidate]))
-                print("")
 
     def param_tunning(self, param_dist, X, y, test_size=0.2, cv=4, estimators=500):
         clf = RandomForestClassifier(n_estimators=estimators)
@@ -105,13 +69,13 @@ class ForestBuilder(object):
 
         return grid_search, X_train_vali, X_test, y_train_vali, y_test, scaler
 
-    def get_eligible_rf(self, start_date, end_date, param_dist={"max_depth": [6],
+    def get_eligible_model(self, start_date, end_date, param_dist={"max_depth": [6],
                                                                 "max_features": [None],
                                                                 "min_samples_split": [0.01],
                                                                 "bootstrap": [False],
                                                                 "criterion": ["entropy"]},
-                        test_size=0.2, cv=4,
-                        estimators=500, precision_threshold=0.7, F_threshold=0.7):
+                           test_size=0.2, cv=4,
+                           estimators=100, precision_threshold=0.7, F_threshold=0.7):
         """
         调用param_tunning 找到并返回符合precision_threshold要求的模型中，F score最高的那个模型
         :param param_dist:
@@ -186,10 +150,3 @@ class ForestBuilder(object):
         # else:
         #     return None
 
-    @staticmethod
-    def cross(s1, s2):
-        s1_greater_s2 = s1 > s2
-        s1_greater_s2_lagged = s1_greater_s2.shift(1)
-        result = s1_greater_s2[1:] & (~s1_greater_s2_lagged[1:]).replace({-1: True, -2: False})
-        result[s1.index[0]] = np.nan
-        return result

@@ -1,24 +1,70 @@
 import talib
 from tree_clf.random_forest import ForestBuilder
+from datetime import timedelta
+from pandas import Series, DataFrame
 model = ForestBuilder  # 分类所用的模型
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 def init(context):
     context.pool = index_components('000016.XSHG', date='2012-01-01')
-    context.forests ={}
-    for equity in context.pool:
-        # 训练模型 先不进行调参
+    context.model_generators = {}  # 用于存储投资池中各个股票的模型生成器
+    for i in context.pool:
+        context.model_generators[i] = ForestBuilder(i)
+
+    context.eligible_models = {}  # 用于存储通过标准的模型
+    context.eligible_models_weights = Series()  # 用于存储达标模型的资金权重
+    context.eligible_models_scalers = {}  # 用于存储达标模型的scaler
+
+    scheduler.run_monthly(get_models)  # 每个月训练一次模型，选出符合标准的放入context.eligible_models
+    context.precision_threshold = 0.65  # 设置精确度阈值，通过此阈值的模型才可以入选
+    context.F_threshold = 0.7  # 设置F1 score阈值，通过此阈值的模型才可以入选
+    context.transaction = DataFrame()  # 用于记录买入的品种，日期，价格
+    scheduler.run_daily(sell_old, time_rule=market_open(minute=0))  # 每天09:31卖掉持有日大于等于5天的股票
 
 
+def get_models(context):
+    """
+    获得该期达标模型，以及其scaler，并根据其模型得分计算对其分配的资金权重
+    :param context:
+    :return:
+    """
+    for i in context.pool:
+        end_date = context.now.strftime('%Y-%m-%d')
+        start_date = (context.now - timedelta(days=365*4)).strftime('%Y-%m-%d')
+        context.eligible_models = {}  # 先将上一期达标模型清空
+        context.eligible_models_weights = Series()  # # 先将上一期达标模型的资金权重清空
+        model_i = context.model_generators[i].get_eligible_model(start_date, end_date,
+                                                                 precision_threshold=context.precision_threshold,
+                                                                 F_threshold=context.F_threshold)
+        if model_i is not None:
+            context.eligible_models[i] = model_i['best_rf']
+            context.eligible_models_scalers[i] = model_i['scaler']
+            context.eligible_models_weights[i] = model_i['test_precision'] + model_i['test_f1']
+    context.eligible_models_weights /= context.eligible_models_weights.sum()
 
 
+def sell_old(context, bar_dict):
+    """
+    卖掉持有日超过5天的股票
+    :param context:
+    :param bar_dict:
+    :return:
+    """
+    temp_sell_df = context.transaction.date[(context.now - context.transaction.date) >= timedelta(days=5)]
+    for i in temp_sell_df.index:
+        order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
+        context.transaction.drop(index=i, inplace=True)
 
-    # 在context中保存全局变量
-    context.s1 = "000001.XSHE"
 
-    # 设置这个策略当中会用到的参数，在策略中可以随时调用，这个策略使用长短均线，我们在这里设定长线和短线的区间，在调试寻找最佳区间的时候只需要在这里进行数值改动
-    context.SHORTPERIOD = 20
-    context.LONGPERIOD = 120
+def record_transaction(context, bar_dict, order_book_id):
+    """
+    记录做多的股票代码 开仓时间 开仓价格
+    :param context:
+    :return:
+    """
+    context.transaction = context.transaction.append(Series(index=['date', 'cost'],
+                                                            data=[context.now, bar_dict[order_book_id].last],
+                                                            name=order_book_id))
 
 
 # before_trading此函数会在每天策略交易开始前被调用，当天只会被调用一次

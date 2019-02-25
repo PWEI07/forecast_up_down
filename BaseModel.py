@@ -1,14 +1,10 @@
 # coding=utf-8
 from builtins import *
-
+import abc
 import rqdatac as rd
 import numpy as np
-import talib
-from sklearn.model_selection import train_test_split, GridSearchCV
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
-from time import time
-from sklearn.metrics import f1_score, make_scorer, accuracy_score, precision_recall_curve, confusion_matrix
 from pandas import Series
 
 rd.init()
@@ -19,7 +15,8 @@ class BaseModel(object):
     def __init__(self, code):
         self.code = code
 
-    def __xdata(self, start_date, end_date, *args, **kwargs):
+    @abc.abstractmethod
+    def xdata(self, start_date, end_date, *args, **kwargs):
         """
 
         :param start_date:
@@ -28,25 +25,24 @@ class BaseModel(object):
         :param kwargs:
         :return:
         """
-        raise NotImplementedError
+        pass
 
-    def __ydata(self, start_date, end_date, window):
+    def ydata(self, start_date, end_date, window):
         data_lagged = rd.get_price(self.code, start_date=start_date, end_date=end_date, frequency='1d')
-        rise = self.posterior_rolling_max(data_lagged['high'], window).values > 1.01 * data_lagged[
-            'open'].values  # target
-        return Series(data=rise, index=data_lagged.index)
+        # rise = self.posterior_rolling_max(data_lagged['high'], window).values > 1.01 * data_lagged[
+        #     'open'].values  # target
+        return self.posterior_rolling_max(data_lagged['high'], window) > 1.01 * data_lagged[
+            'open']
+        # return Series(data=rise, index=data_lagged.index)
 
     @staticmethod
     def posterior_rolling_max(series, window=5):
-        s1 = series.rolling(window=window).max()
-        s1[:-(window - 1)] = s1[window - 1:]
-        s1[-(window - 1):] = np.nan
-        return s1
+        s1 = series.shift(-1)
+        s2 = s1.rolling(window=window).max()
+        s2 = s2.shift(-(window - 1))
+        return s2
 
-    def data(self, start_date, end_date, window=5, *args, **kwargs):
-        X = self.__xdata(start_date, end_date, *args, **kwargs)
-        y = self.__ydata(start_date, end_date, window=window)
-
+    def data(self, X, y, window):
         # match the length of target to features
         y = y[y.index.date >= X.index[0].date()]
         y = y[:-(window - 1)]
@@ -74,13 +70,15 @@ class BaseModel(object):
                 print("Parameters: {0}".format(results['params'][candidate]))
                 print("")
 
-    def param_tunning(self):
+    @abc.abstractmethod
+    def param_tunning(self, param_dist, X, y, test_size=0.2, cv=4):
         """
 
         :return: grid_search, X_train_vali, X_test, y_train_vali, y_test, scaler
         """
-        return NotImplementedError
+        pass
 
+    @abc.abstractmethod
     def get_eligible_model(self, start_date, end_date, param_dist,
                            test_size=0.2, cv=4, *args, **kwargs):
         """
@@ -94,7 +92,7 @@ class BaseModel(object):
         :param kwargs:
         :return:
         """
-        raise NotImplementedError
+        pass
 
     @staticmethod
     def cross(s1, s2):
