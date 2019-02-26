@@ -1,14 +1,15 @@
-import talib
 from tree_clf.random_forest import ForestBuilder
 from datetime import timedelta
 from pandas import Series, DataFrame
 import numpy as np
+import rqdatac as rd
+rd.init()
 
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 def init(context):
-    # context.pool = index_components('000016.XSHG', date='2012-01-01')
-    context.pool = ['600489.XSHG', '600585.XSHG', '601899.XSHG', '600188.XSHG', '600348.XSHG']
+    context.pool = index_components('000300.XSHG', date='2012-01-01')
+    # context.pool = ['600489.XSHG', '600585.XSHG', '601899.XSHG', '600188.XSHG', '600348.XSHG']
     context.model_generators = {}  # 用于存储投资池中各个股票的模型生成器
     for i in context.pool:
         context.model_generators[i] = ForestBuilder(i)
@@ -18,14 +19,13 @@ def init(context):
     context.eligible_models_scalers = {}  # 用于存储达标模型的scaler
 
     scheduler.run_monthly(get_models, tradingday=1)  # 每个月训练一次模型，选出符合标准的放入context.eligible_models
-    context.precision_threshold = 0.7  # 设置精确度阈值，通过此阈值的模型才可以入选
+    context.precision_threshold = 0.75  # 设置精确度阈值，通过此阈值的模型才可以入选
     context.F_threshold = 0.8  # 设置F1 score阈值，通过此阈值的模型才可以入选
     context.transaction = DataFrame(columns=['date', 'cost'])  # 用于记录买入的品种，日期，价格
     scheduler.run_daily(sell_old, time_rule=market_open(minute=0))  # 每天09:31卖掉持有日大于等于5天的股票
-    scheduler.run_daily(order_buy_list, time_rule=market_open(minute=0))  # 每天09:31买入context.buy_list中的股票
+    scheduler.run_daily(make_prediction, time_rule=market_open(minute=0))  # 每天09:31进行预测
+    scheduler.run_daily(order_buy_list, time_rule=market_open(minute=1))  # 每天09:32买入context.buy_list中的股票
 
-    # for i in np.arange(0, 240, 5):
-    #     scheduler.run_daily(check_and_sell, time_rule=market_open(minute=i))  # 为加快回测运行速度，每隔5分钟（而不是每分钟）检查是否有市价超过成本价1%的股票并卖出
     context.buy_list = []  # 预测要涨 需要买的股票
 
 
@@ -38,10 +38,10 @@ def get_models(context, bar_dict):
     context.eligible_models = {}  # 先将上一期达标模型清空
     context.eligible_models_scalers = {}
     context.eligible_models_weights = Series()
+    end_date = get_previous_trading_date(context.now, n=1).strftime('%Y-%m-%d')
+    start_date = (context.now - timedelta(days=365 * 4)).strftime('%Y-%m-%d')
 
     for i in context.pool:
-        end_date = context.now.strftime('%Y-%m-%d')
-        start_date = (context.now - timedelta(days=365*4)).strftime('%Y-%m-%d')
         model_i = context.model_generators[i].get_eligible_model(start_date, end_date,
                                                                  precision_threshold=context.precision_threshold,
                                                                  F_threshold=context.F_threshold)
@@ -64,7 +64,7 @@ def sell_old(context, bar_dict):
     temp_sell_df = context.transaction[(context.now - context.transaction['date']) >= timedelta(days=5)]
     for i in temp_sell_df.index:
         print('start to sell old ', i)
-        order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
+        order_shares(i, amount=-1 * context.portfolio.positions[i].sellable)
         if context.portfolio.positions[i].quantity == 0:
             context.transaction.drop(index=i, inplace=True)
         else:
@@ -82,21 +82,22 @@ def record_transaction(context, bar_dict, order_book_id):
                                                             name=order_book_id))
 
 
-def make_prediction(context):
+def make_prediction(context, bar_dict):
     """
     对每个达标模型，获取对应股票最近60个交易日的输入数据，利用模型进行预测
     :param context:
     :return:
     """
     context.buy_list = []
+    start_date = get_previous_trading_date(context.now, 101)
+    end_date = get_previous_trading_date(context.now, 1)
+
     for stock in context.eligible_models:
-        if context.portfolio.positions[stock].quantity != 0:
+        if stock in context.portfolio.positions:
             continue  # 如果该模型已经开仓 则跳过
         else:
             pass
         model_generator = context.model_generators[stock]  # 调取模型生成器
-        start_date = get_previous_trading_date(context.now, 101)
-        end_date = get_previous_trading_date(context.now, 1)
         model_X = model_generator.xdata(start_date, end_date)  # 获取对应股票最近100个交易日的输入数据
         predictions = context.eligible_models[stock].predict(context.eligible_models_scalers[stock].transform(model_X))
         if predictions[-1]:
@@ -108,7 +109,7 @@ def make_prediction(context):
 def order_buy_list(context, bar_dict):
     for stock in context.buy_list:
         print('buy stock ', stock)
-        order = order_percent(stock, context.eligible_models_weights[stock])
+        order = order_percent(stock, 0.8 * context.eligible_models_weights[stock])
         if order is not None:
             if order.filled_quantity != 0:
                 record_transaction(context, bar_dict, stock)
@@ -126,9 +127,10 @@ def check_and_sell(context, bar_dict):
     :return:
     """
     for i in context.transaction.index:
+
         if bar_dict[i].last >= np.mean(context.transaction.loc[i].cost) * 1.01:
-            print('sell and make profit on ', i)
-            order_shares(i, amount=-1 * context.portfolio.positions[i].quantity)
+            print('sell and make profit on ', i, '\n\n')
+            order_shares(i, amount=-1 * context.portfolio.positions[i].sellable)
             if context.portfolio.positions[i].quantity == 0:
                 context.transaction.drop(index=i, inplace=True)
             else:
@@ -139,12 +141,21 @@ def check_and_sell(context, bar_dict):
 
 # before_trading此函数会在每天策略交易开始前被调用，当天只会被调用一次
 def before_trading(context):
-    make_prediction(context)  # 每天开始交易前，计算有哪些股票上涨的概率较大
+    for i in context.transaction.index:
+        if i not in context.portfolio.positions.keys():
+            print(i, 'is in context.transaction.index, but not in context.portfolio.positions.keys() !\n\n')
+            context.transaction.drop(index=i, inplace=True)
+        else:
+            pass
 
 
 # 你选择的证券的数据更新将会触发此段逻辑，例如日或分钟历史数据切片或者是实时数据切片更新
 def handle_bar(context, bar_dict):
-    check_and_sell(context, bar_dict)
+    minute = context.now.minute
+    if minute == 1 or minute == 29:
+        check_and_sell(context, bar_dict)  # 加快运行速度 只在每小时的第1 29分钟检查是否需要获利了结
+    else:
+        pass
 
 
 # after_trading函数会在每天交易结束后被调用，当天只会被调用一次

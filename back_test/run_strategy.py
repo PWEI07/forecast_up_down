@@ -7,7 +7,7 @@ config = {
         "start_date": "2017-01-01",
         "end_date": "2019-02-20",
         "run_type": "b",
-        "benchmark": "000985.XSHG",
+        "benchmark": '000300.XSHG',
         "frequency": "1m"
         , "data_bundle_path": "/Users/peter_zirui_wei/Documents/rqpro/bundle/"
         , "accounts": {
@@ -56,10 +56,10 @@ config = {
 # series4 = result1['portfolio']['unit_net_value']  # 去除掉最低一组后的走势
 # series4.name = 'without_daily_low_sentiment'
 result5 = run_file("/Users/peter_zirui_wei/PycharmProjects/forecast_up_down/back_test/random_forest_50.py", config)['sys_analyser']
-
+print(result5)
 # result5 = run_file("/Users/peter_zirui_wei/PycharmProjects/forecast_up_down/back_test/random_forest_50.py", config)['sys_analyser']
 series5 = result5['portfolio']['unit_net_value']  # 去除掉最低一组后的走势
-series5.name = 'daily_high_sentiment'
+# series5.name = 'daily_high_sentiment'
 
 # compare_df = pd.concat([series1, series5, series3], axis=1)
 # compare_df.columns = ['without_daily_low_sentiment', 'daily_high_sentiment', 'same_weighted_benchmark']
