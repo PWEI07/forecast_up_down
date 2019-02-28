@@ -5,9 +5,9 @@ import pandas as pd
 config = {
     "base": {
         "start_date": "2017-01-01",
-        "end_date": "2019-02-20",
+        "end_date": "2018-01-01",
         "run_type": "b",
-        "benchmark": '000300.XSHG',
+        "benchmark": '000016.XSHG',
         "frequency": "1m"
         , "data_bundle_path": "/Users/peter_zirui_wei/Documents/rqpro/bundle/"
         , "accounts": {
@@ -55,10 +55,10 @@ config = {
 # result4 = run_file("daily_high_sentiment_strategy.py", config)['sys_analyser']
 # series4 = result1['portfolio']['unit_net_value']  # 去除掉最低一组后的走势
 # series4.name = 'without_daily_low_sentiment'
-result5 = run_file("/Users/peter_zirui_wei/PycharmProjects/forecast_up_down/back_test/random_forest_50.py", config)['sys_analyser']
-print(result5)
+result_50_2017 = run_file("/Users/peter_zirui_wei/PycharmProjects/forecast_up_down/back_test/random_forest_50.py", config)['sys_analyser']
+print(result_50_2017)
 # result5 = run_file("/Users/peter_zirui_wei/PycharmProjects/forecast_up_down/back_test/random_forest_50.py", config)['sys_analyser']
-series5 = result5['portfolio']['unit_net_value']  # 去除掉最低一组后的走势
+series5 = result_50_2017['portfolio']['unit_net_value']  # 去除掉最低一组后的走势
 # series5.name = 'daily_high_sentiment'
 
 # compare_df = pd.concat([series1, series5, series3], axis=1)

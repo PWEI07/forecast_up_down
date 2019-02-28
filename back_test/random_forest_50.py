@@ -8,23 +8,17 @@ rd.init()
 
 # 在这个方法中编写任何的初始化逻辑。context对象将会在你的算法策略的任何方法之间做传递。
 def init(context):
-    context.pool = index_components('000300.XSHG', date='2012-01-01')
-    # context.pool = ['600489.XSHG', '600585.XSHG', '601899.XSHG', '600188.XSHG', '600348.XSHG']
-    context.model_generators = {}  # 用于存储投资池中各个股票的模型生成器
-    for i in context.pool:
-        context.model_generators[i] = ForestBuilder(i)
-
     context.eligible_models = {}  # 用于存储通过标准的模型
     context.eligible_models_weights = Series()  # 用于存储达标模型的资金权重
     context.eligible_models_scalers = {}  # 用于存储达标模型的scaler
 
     scheduler.run_monthly(get_models, tradingday=1)  # 每个月训练一次模型，选出符合标准的放入context.eligible_models
-    context.precision_threshold = 0.75  # 设置精确度阈值，通过此阈值的模型才可以入选
+    context.precision_threshold = 0.7  # 设置精确度阈值，通过此阈值的模型才可以入选
     context.F_threshold = 0.8  # 设置F1 score阈值，通过此阈值的模型才可以入选
     context.transaction = DataFrame(columns=['date', 'cost'])  # 用于记录买入的品种，日期，价格
     scheduler.run_daily(sell_old, time_rule=market_open(minute=0))  # 每天09:31卖掉持有日大于等于5天的股票
-    scheduler.run_daily(make_prediction, time_rule=market_open(minute=0))  # 每天09:31进行预测
-    scheduler.run_daily(order_buy_list, time_rule=market_open(minute=1))  # 每天09:32买入context.buy_list中的股票
+    scheduler.run_daily(make_prediction, time_rule=market_open(minute=1))  # 每天09:32进行预测
+    scheduler.run_daily(order_buy_list, time_rule=market_open(minute=2))  # 每天09:33买入context.buy_list中的股票
 
     context.buy_list = []  # 预测要涨 需要买的股票
 
@@ -35,6 +29,13 @@ def get_models(context, bar_dict):
     :param context:
     :return:
     """
+    # 每个月 首先更新股票池
+    context.pool = index_components('000016.XSHG')
+    # context.pool = ['600489.XSHG', '600585.XSHG', '601899.XSHG', '600188.XSHG', '600348.XSHG']
+    context.model_generators = {}  # 用于存储投资池中各个股票的模型生成器
+    for i in context.pool:
+        context.model_generators[i] = ForestBuilder(i)
+
     context.eligible_models = {}  # 先将上一期达标模型清空
     context.eligible_models_scalers = {}
     context.eligible_models_weights = Series()
@@ -128,7 +129,7 @@ def check_and_sell(context, bar_dict):
     """
     for i in context.transaction.index:
 
-        if bar_dict[i].last >= np.mean(context.transaction.loc[i].cost) * 1.01:
+        if bar_dict[i].last >= np.mean(context.transaction.loc[i].cost) * 1.015:
             print('sell and make profit on ', i, '\n\n')
             order_shares(i, amount=-1 * context.portfolio.positions[i].sellable)
             if context.portfolio.positions[i].quantity == 0:
@@ -151,11 +152,12 @@ def before_trading(context):
 
 # 你选择的证券的数据更新将会触发此段逻辑，例如日或分钟历史数据切片或者是实时数据切片更新
 def handle_bar(context, bar_dict):
-    minute = context.now.minute
-    if minute == 1 or minute == 29:
-        check_and_sell(context, bar_dict)  # 加快运行速度 只在每小时的第1 29分钟检查是否需要获利了结
-    else:
-        pass
+    check_and_sell(context, bar_dict)
+    # minute = context.now.minute
+    # if minute == 1 or minute == 29:
+    #     check_and_sell(context, bar_dict)  # 加快运行速度 只在每小时的第1 29分钟检查是否需要获利了结
+    # else:
+    #     pass
 
 
 # after_trading函数会在每天交易结束后被调用，当天只会被调用一次

@@ -2,14 +2,11 @@
 from builtins import *
 from BaseModel import BaseModel
 import rqdatac as rd
-import numpy as np
 import talib
 from sklearn.model_selection import train_test_split, GridSearchCV
 from sklearn.ensemble import RandomForestClassifier
-from sklearn.preprocessing import MinMaxScaler
 from time import time
 from sklearn.metrics import f1_score, make_scorer, accuracy_score, precision_recall_curve, confusion_matrix
-from pandas import Series
 
 rd.init()
 
@@ -50,9 +47,9 @@ class ForestBuilder(BaseModel):
         test_data1.dropna(axis=0, inplace=True)  # get rid of nan rows
         return test_data1
 
-    def data(self, start_date, end_date, window=5):
+    def data(self, start_date, end_date, window=5, rise=0.015, stop=0.02):
         X = self.xdata(start_date, end_date)
-        y = super(ForestBuilder, self).ydata(start_date, end_date, window=window)
+        y = super(ForestBuilder, self).ydata(start_date, end_date, window=window, rise=rise, stop=stop)
         # y = super().__ydata(start_date, end_date, window=window, equity=self.code)
 
         # match the length of target to features
@@ -86,7 +83,7 @@ class ForestBuilder(BaseModel):
         :return:
         """
         print("start getting best random forest model for ", self.code, "\n\n")
-        X, y = self.data(start_date, end_date)
+        X, y = self.data(start_date, end_date, )
         start = time()
         search_result, X_train_vali, X_test, y_train_vali, y_test, scaler = self.param_tunning(param_dist=param_dist,
                                                                                                X=X, y=y,
@@ -113,40 +110,4 @@ class ForestBuilder(BaseModel):
             best_rf_all_data = best_rf.fit(scaler.transform(X), y)  # fit the model on all data available
             return {'best_rf': best_rf_all_data, 'scaler': scaler, 'test_precision': test_precision, 'test_f1': f1_test}
 
-        # # 找到使得X_train的precision大于0.85的最小的阈值
-        # precision, recall, thresholds = precision_recall_curve(y_train_vali, best_rf.predict_proba(X_train_vali)[:,1])
-        # if len(np.where(precision > 0.85)[0]) == 0:
-        #     return None
-        # else:
-        #     pass
-        # min_threshold = thresholds[np.min(np.where(precision > precision_threshold)[0])]
-        #
-        # # among thresholds greater than the min_threshold, find one that maximize F score
-        # train_prob_pred = best_rf.predict_proba(X_train_vali)[:, 1]
-        # largest_F = 0
-        # best_threshold = min_threshold
-        # for threshold in thresholds[thresholds > min_threshold]:
-        #     classcification = train_prob_pred >= threshold
-        #     if f1_score(y_train_vali, classcification) > largest_F:
-        #         largest_F = f1_score(y_train_vali, classcification)
-        #         best_threshold = threshold
-        #     else:
-        #         pass
-        #
-        # if largest_F < F_threshold:
-        #     return None
-        # else:
-        #     pass
-        #
-        # # test on the test set
-        # test_prob_pred = best_rf.predict_proba(X_test)[:, 1]
-        # test_pred = test_prob_pred > best_threshold
-        # # test_confusion_mat = confusion_matrix(y_test, test_pred)
-        # test_precision = sum(test_pred[test_pred == 1] == y_test[test_pred == 1])/sum(test_pred)
-        # if f1_score(y_test, test_pred) > F_threshold and test_precision > precision_threshold:
-        #     scaler.fit(X)  # refit the scaler on all data available
-        #     best_rf_all_data = best_rf.fit(scaler.transform(X), y)  # fit the model on all data available
-        #     return {'best_rf': best_rf_all_data, 'saler': scaler, 'threshold': best_threshold, 'test_precision': test_precision}
-        # else:
-        #     return None
 

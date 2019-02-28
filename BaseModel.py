@@ -6,7 +6,6 @@ import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import MinMaxScaler
 from pandas import Series
-
 rd.init()
 
 
@@ -27,20 +26,74 @@ class BaseModel(object):
         """
         pass
 
-    def ydata(self, start_date, end_date, window):
-        data_lagged = rd.get_price(self.code, start_date=start_date, end_date=end_date, frequency='1d')
-        # rise = self.posterior_rolling_max(data_lagged['high'], window).values > 1.01 * data_lagged[
-        #     'open'].values  # target
-        return self.posterior_rolling_max(data_lagged['high'], window) > 1.01 * data_lagged[
-            'open']
+    @staticmethod
+    def roll(df, w, **kwargs):
+        roll_array = np.dstack([df.values[i:i + w, :] for i in range(len(df.index) - w + 1)]).T
+        panel = pd.Panel(roll_array,
+                         items=df.index[w - 1:],
+                         major_axis=df.columns,
+                         minor_axis=pd.Index(range(w), name='roll'))
+        return panel.to_frame().unstack().T.groupby(level=0, **kwargs)
+
+    def ydata(self, start_date, end_date, window, rise=0.015, stop=0.025):
+        """
+
+        :param stop:
+        :param start_date:
+        :param end_date:
+        :param window:
+        :param rise: 涨幅超过多少才标为1 默认0.015
+        :return:
+        """
+        data_lagged = rd.get_price(self.code, start_date=start_date, end_date=end_date, frequency='1d',
+                                   fields=['close', 'high', 'low'])
+        data_lagged['high'] = data_lagged.high.shift(-1)
+        data_lagged['low'] = data_lagged.low.shift(-1)
+
+        y = []
+        for i in range(len(data_lagged) - window + 1):
+            temp_df = data_lagged[i: i+window]
+            y.append(self.find_max_min(temp_df, rise=rise, stop=stop))
+        y += [np.nan] * (window - 1)
+        y = Series(data=y, index=data_lagged.index)
+        return y
+        # temp = self.roll(data_lagged, window)
+        # label = temp.apply(func=lambda x: self.find_max_min(x, rise=rise, stop=stop))
+        # return label
+        # return self.posterior_rolling_max_min(data_lagged[['high', 'low']], window, rise=rise) > 1.015 * data_lagged[
+        #     'open']
         # return Series(data=rise, index=data_lagged.index)
 
+    # @staticmethod
+    # def posterior_rolling_max_min(high_low, window=5, rise):
+    #     high_low['high_1'] = high_low.high.shift(-1)
+    #     high_low['low_1'] = high_low.low.shift(-1)
+    #     high1 = high_low.shift(-1)
+    #     low1 = low_series.shift(-1)
+    #     s2 = high1.rolling(window=window).max()
+    #     s2 = s2.shift(-(window - 1))
+    #     return s2
+
     @staticmethod
-    def posterior_rolling_max(series, window=5):
-        s1 = series.shift(-1)
-        s2 = s1.rolling(window=window).max()
-        s2 = s2.shift(-(window - 1))
-        return s2
+    def find_max_min(df, rise, stop):
+        """
+
+        :param df:
+        :param rise: 止盈点 eg 0.015
+        :param stop: 止损点 eg 0.02
+        :return:
+        """
+        buy_price = df['close'][0]
+        threshold = (1 + rise) * buy_price
+        if max(df['high']) <= threshold:
+            return False
+        else:
+            sell_date = df.index[df['high'] > threshold][0]
+            lowest_before_sell_date = np.min(df[df.index < sell_date]['low'])
+            if lowest_before_sell_date >= (1 - stop) * buy_price:
+                return True
+            else:
+                return False
 
     def data(self, X, y, window):
         # match the length of target to features
